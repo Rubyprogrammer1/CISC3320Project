@@ -1,3 +1,9 @@
+/**
+ * THIS CLASS CONTAINS ALL THE STATISTICS WE WANT TO KEEP TRACK OF
+ * FOR JOBS THAT ENTER THE SYSTEM. TO UTILIZE, CREATE A NEW INSTANCE
+ * OF THIS CLASS AS YOU ADD NEWS JOBS THAT YOU WOULD LIKE TO TRACK
+ */
+
 public class processControlBlock{
     
     private int jobNumber;
@@ -9,11 +15,16 @@ public class processControlBlock{
     private int ioPending;
     private int priority;
     private int address;
+    private int timesBlocked;
     private boolean blocked;
     private boolean latched;
     private boolean inCore;
     private boolean terminated;
     
+    /**
+     * Constructor takes in general information about a job and sets variables 
+     * contained in this class about the job
+     */
     public processControlBlock(int jobNumber, int priority, int jobSize, int maxCpuTime, int timeArrived){
         this.jobNumber = jobNumber;
         this.priority = priority;
@@ -26,41 +37,49 @@ public class processControlBlock{
         latched = false;
         inCore = false;
         terminated = false;
+        timesBlocked = 0;
         address = -1;
-    }
+    }    
     
-    public int getJobNumber(){
-        return jobNumber;
-    }
-    
-    public int getJobSize(){
-        return jobSize;
-    }
-    
+    /**
+     * A collection of getter methods for variables in the program
+     */
+     
+    public int getTimesBlocked(){return timesBlocked;}    
+    public int getTimeArrived(){return timeArrived;}
+    public int getJobNumber(){return jobNumber;}    
+    public int getJobSize(){return jobSize;}
+    public int getAddress(){return address;}
+    public int getMaxCpuTime(){return maxCpuTime;}
+    public int getIoCount(){return ioPending;}
+    public int getCpuTimeUsed(){return cpuTimeUsed;}
+    public int getCpuTimeLeft(){return maxCpuTime - cpuTimeUsed;}    
+    public int getPriority(){return priority;}    
+    public boolean getBlockedStatus(){return blocked;}
+    public boolean getInCoreStatus(){return inCore==true;}    
+    public boolean getTerminatedStatus(){return terminated;}
+    public boolean getLatchedStatus(){return latched;}        
+            
+    /**
+     * A collection of setter methods for variables in the program
+     */            
+                   
     public void setAddress(int address){
         this.address = address;
-    }
-    
-    public int getAddress(){
-        return address;
     }
     
     public void setLastTimeProcessing(int lastTimeProcessing){
         this.lastTimeProcessing = lastTimeProcessing;
     }
     
-    public int getMaxCpuTime(){
-        return maxCpuTime;
+    public void calculateTimeProcessed(int currentTime){
+        cpuTimeUsed = cpuTimeUsed + currentTime - lastTimeProcessing;
     }
     
-    public int getCpuTimeUsed(){
-        return cpuTimeUsed;
-    }
-    
-    public int getCpuTimeLeft(){
-        return maxCpuTime - cpuTimeUsed;
-    }
-    
+    public void incTimesBlocked(){
+        timesBlocked++;
+    }    
+
     public void incrementIoCount(){
         ioPending++;
     }
@@ -68,11 +87,7 @@ public class processControlBlock{
     public void decrementIoCount(){
         ioPending--;
     }
-    
-    public int getIoCount(){
-        return ioPending;
-    }
-    
+
     public void blockJob(){
         blocked = true;
     }
@@ -80,21 +95,13 @@ public class processControlBlock{
     public void unblockJob(){
         blocked = false;
     }
-    
-    public boolean getBlockedStatus(){
-        return blocked;
-    }
-    
+
     public void latchJob(){
         latched = true;
     }
     
     public void unlatchJob(){
         latched = false;
-    }
-    
-    public boolean getLatchedStatus(){
-        return latched;
     }
     
     public void putInCore(){
@@ -104,30 +111,13 @@ public class processControlBlock{
     public void removeInCore(){
         inCore = false;
     }
-    
-    public boolean getInCoreStatus(){
-        return inCore==true;
-    }
-    
+
     public void terminateJob(){
         terminated = true;
     }
     
-    public boolean getTerminatedStatus(){
-        return terminated;
-    }
-    
-    public int getPriority(){
-        return priority;
-    }
-    
-    
-    public void calculateTimeProcessed(int currentTime){
-        cpuTimeUsed = cpuTimeUsed + currentTime - lastTimeProcessing;
-    }
-    
     public void printProcess(){
-        System.out.println(jobNumber + "      " + jobSize + "      " + timeArrived + "      " + cpuTimeUsed + "      " + maxCpuTime + "      " + ioPending + "      " + priority + "      " + blocked  + "      " + latched + "      " + inCore + "      " + terminated + "      " + address);    
+        System.out.println(jobNumber + "      " + jobSize + "      " + timeArrived + "      " + cpuTimeUsed + "      " + maxCpuTime + "      " + ioPending + "      " + priority + "      " + blocked  + "      " + latched + "      " + inCore + "      " + terminated + "      " + address + "      " + timesBlocked);    
     }
 
 }

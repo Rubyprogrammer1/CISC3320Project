@@ -36,7 +36,7 @@ public class jobTable{
         return JobTable.containsKey(jobNumber);
 	}
            
-    public void printJobTable(){
+    public static void printJobTable(){
         processControlBlock temp;
     
         Set set = JobTable.entrySet();

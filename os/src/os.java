@@ -13,14 +13,13 @@ public class os{
     private static processControlBlock lastJobToIo;
     private static processControlBlock lastJobToDrum;
     private static processControlBlock currentlyWorkingJob;
-    private static int roundRobinSlice;
     private static int blockCount;
     private static boolean currentlyDoingIo, DoingSwap;
+    
+    private static final int ROUNDROBINSLICE = 9;
+    private static final int BLOCKTHRESHOLD = 1;
 
 
-    /*
-        INITIALIZE VARIABLES, TABLES, AND ROUND ROBIN SLICE
-    */
     public static void startup(){
         JobTable = new jobTable(50);
         FreeSpaceTable = new freeSpaceTable(100);
@@ -33,7 +32,6 @@ public class os{
         currentlyDoingIo = false;
         DoingSwap = false;
         
-        roundRobinSlice = 9;
         blockCount = 0;
         
         sos.offtrace();
@@ -47,71 +45,45 @@ public class os{
         
         currentlyWorkingJob = new processControlBlock(p[1], p[2], p[3], p[4], p[5]);
         JobTable.addJob(currentlyWorkingJob);
-        MemoryManager(currentlyWorkingJob, 0);
-        
-        // Only one chance a job goes on the ready queue from this function
+        MemoryManager(currentlyWorkingJob);
         
         cpuScheduler(a, p);
     }
     
     public static void Svc(int a[], int p[]){
         lastRunningJobPCB.calculateTimeProcessed(p[5]);
-        
+        readyQueue.add(lastRunningJobPCB);        
         
         if(a[0] == 5){
-            if(lastRunningJobPCB.getIoCount() > 0){
-                while(readyQueue.contains(lastRunningJobPCB))
-                    readyQueue.remove(lastRunningJobPCB);
-                while(drumToMainQueue.contains(lastRunningJobPCB))
-                    drumToMainQueue.remove(lastRunningJobPCB);
-                while(mainToDrumQueue.contains(lastRunningJobPCB))
-                    mainToDrumQueue.remove(lastRunningJobPCB);                    
+            while(readyQueue.contains(lastRunningJobPCB))
+                readyQueue.remove(lastRunningJobPCB);
             
+            while(mainToDrumQueue.contains(lastRunningJobPCB))
+                mainToDrumQueue.remove(lastRunningJobPCB);          
+            
+            if(lastRunningJobPCB.getIoCount() > 0){
                 lastRunningJobPCB.terminateJob();
             }else{
-                while(readyQueue.contains(lastRunningJobPCB))
-                    readyQueue.remove(lastRunningJobPCB);
-                while(ioQueue.contains(lastRunningJobPCB))
-                    ioQueue.remove(lastRunningJobPCB);                            
-                while(drumToMainQueue.contains(lastRunningJobPCB))
-                    drumToMainQueue.remove(lastRunningJobPCB);
-                while(mainToDrumQueue.contains(lastRunningJobPCB))
-                    mainToDrumQueue.remove(lastRunningJobPCB);                    
-                                                                                                                                                                  
                 lastRunningJobPCB.removeInCore();
                 FreeSpaceTable.addSpace(lastRunningJobPCB);
-                JobTable.removeJob(lastRunningJobPCB);
-                
-                lastRunningJobPCB = null;                           
+                JobTable.removeJob(lastRunningJobPCB);                          
             }
         }
         else if(a[0] == 6){
-            readyQueue.add(lastRunningJobPCB);
             lastRunningJobPCB.incrementIoCount();
             ioQueue.add(lastRunningJobPCB);
             ioManager();
         }
         else if(a[0] == 7){
-            readyQueue.add(lastRunningJobPCB);
-            if(lastRunningJobPCB.getIoCount() != 0){
-                lastRunningJobPCB.printProcess();       
+            if(lastRunningJobPCB.getIoCount() != 0){      
+                readyQueue.remove(lastRunningJobPCB);
                 lastRunningJobPCB.blockJob();
-                blockCount++;       
-                
-                if(blockCount > 1 && lastRunningJobPCB.getCpuTimeLeft() > 0){// || lastRunningJobPCB.getJobSize() > 40 || lastRunningJobPCB.getCpuTimeLeft() > 30000){
-                    //if(ioQueue.size() > 1){
-                        if(/*lastRunningJobPCB != ioQueue.get(0) &&*/ !lastRunningJobPCB.getLatchedStatus()){
-                            mainToDrumQueue.add(lastRunningJobPCB);
 
-                            Swapper();
-                        }
-                    //}
+                blockCount++;                       
+                if(blockCount > BLOCKTHRESHOLD && !lastRunningJobPCB.getLatchedStatus()){
+                    mainToDrumQueue.add(lastRunningJobPCB);
+                    Swapper();
                 }         
-                while(readyQueue.contains(lastRunningJobPCB))
-                    readyQueue.remove(lastRunningJobPCB);    
-                if(readyQueue.size() > 0 )
-                    readyQueue.get(0).printProcess();  
-                       
             }
         }
         
@@ -145,7 +117,6 @@ public class os{
         }
         
         ioManager(); 
-          
         cpuScheduler(a, p);
     }        
     
@@ -157,25 +128,18 @@ public class os{
             readyQueue.add(lastRunningJobPCB);
         }
     
-        /* Set the currently working job equal to the first job off the job queue and remove it from the queue
-        */
         currentlyWorkingJob = lastJobToDrum;
         
         if(!currentlyWorkingJob.getInCoreStatus()){
             currentlyWorkingJob.putInCore();
-            if(currentlyWorkingJob.getIoCount() > 0)
+            readyQueue.add(currentlyWorkingJob);            
+            for(int i = 0; i < currentlyWorkingJob.getIoCount(); i++)
                 ioQueue.add(currentlyWorkingJob);
-            readyQueue.add(currentlyWorkingJob);
-            while(drumToMainQueue.contains(currentlyWorkingJob))
-                drumToMainQueue.remove(currentlyWorkingJob);             
         }else{
             currentlyWorkingJob.removeInCore();
-            FreeSpaceTable.addSpace(currentlyWorkingJob);
+            FreeSpaceTable.addSpace(currentlyWorkingJob);            
             drumToMainQueue.add(currentlyWorkingJob);
-            while(readyQueue.contains(currentlyWorkingJob))
-                readyQueue.remove(currentlyWorkingJob);
-            while(mainToDrumQueue.contains(currentlyWorkingJob))
-                mainToDrumQueue.remove(currentlyWorkingJob);                            
+            mainToDrumQueue.remove(currentlyWorkingJob);                            
         }
         
         Swapper();        
@@ -185,73 +149,41 @@ public class os{
     public static void Tro(int a[], int p[]){
         lastRunningJobPCB.calculateTimeProcessed(p[5]);
 
-        /*  If the job exceeds its maximum time used:
-          * - Check if there is IO left
-            * - If IO left, remove from ready queue, check terminate bit
-          * - If no IO left, remove from ready queue, IO queue, drum queue
-            * - Set in core bit to 0, add space from job back to FST, remove job from jobTable
-            * - Set last running job = null
-            * - Run the MemoryManager function to attempt to put jobs from the long term scheduler into memory
-        */
         if(lastRunningJobPCB.getCpuTimeUsed() >= lastRunningJobPCB.getMaxCpuTime()){
             if(lastRunningJobPCB.getIoCount() > 0){
-                while(readyQueue.contains(lastRunningJobPCB))
-                    readyQueue.remove(lastRunningJobPCB);
-            
                 lastRunningJobPCB.terminateJob();
-            }else{
-                while(readyQueue.contains(lastRunningJobPCB))
-                    readyQueue.remove(lastRunningJobPCB);
-                while(ioQueue.contains(lastRunningJobPCB))
-                    ioQueue.remove(lastRunningJobPCB);  
-                while(drumToMainQueue.contains(lastRunningJobPCB))
-                    drumToMainQueue.remove(lastRunningJobPCB);       
-                while(mainToDrumQueue.contains(lastRunningJobPCB))
-                    mainToDrumQueue.remove(lastRunningJobPCB);                                        
-                                                                                                                                                                  
+            }else{                                                                                                                                                
                 FreeSpaceTable.addSpace(lastRunningJobPCB);
                 JobTable.removeJob(lastRunningJobPCB);
-                
-                lastRunningJobPCB = null;                           
-            }        
-        }
-        /* If the job exceeds its time slice, place back on the ready drive
-        */
-        else{
+            } 
+            
+            Swapper();            
+            ioManager();        
+        }else{
             readyQueue.add(currentlyWorkingJob);
         }
 
-        Swapper();
         cpuScheduler(a, p);
     }    
     
     public static void ioManager(){
-        if(!currentlyDoingIo){
-            if(ioQueue.size() != 0){
-
-                for(int i = 0; i < ioQueue.size(); i++){
-                    currentlyWorkingJob = ioQueue.get(i);
-                    ioQueue.remove(i);
-                    
-                    lastJobToIo = currentlyWorkingJob;
-                    currentlyDoingIo = true;
-                    currentlyWorkingJob.latchJob();
-                    
-                    sos.siodisk(currentlyWorkingJob.getJobNumber()); 
-                    break;
-                }                    
-            }
+        if(!currentlyDoingIo && ioQueue.size() != 0){
+            for(int i = 0; i < ioQueue.size(); i++){
+                currentlyWorkingJob = ioQueue.get(i);
+                ioQueue.remove(i);
+                
+                lastJobToIo = currentlyWorkingJob;
+                currentlyDoingIo = true;
+                currentlyWorkingJob.latchJob();
+                
+                sos.siodisk(currentlyWorkingJob.getJobNumber()); 
+                break;
+            }                    
         }
     }
     
-    public static void MemoryManager(processControlBlock job, int function){
-        
-        
-        if(function == 0){ // SEE IF THE JOB FITS IN FREE SPACE TALBLE, IF IT DOES, PLACE IN MEMORY
-            drumToMainQueue.add(job);
-        }
-        
-
+    public static void MemoryManager(processControlBlock job){
+        drumToMainQueue.add(job);
         Swapper();
     }        
 
@@ -269,8 +201,7 @@ public class os{
                     DoingSwap = true;
                     sos.siodrum(currentlyWorkingJob.getJobNumber(), currentlyWorkingJob.getJobSize(), currentlyWorkingJob.getAddress(), 0);
                     lastJobToDrum = currentlyWorkingJob;
-                    while(drumToMainQueue.contains(lastJobToDrum))
-                        drumToMainQueue.remove(i);
+                    drumToMainQueue.remove(i);
                     break;
                 }
             }
@@ -278,33 +209,23 @@ public class os{
         
         // Swap out
         if(!DoingSwap){
-            for(int i = 0; i < mainToDrumQueue.size(); i++){
-                if(lowest == 0 && !mainToDrumQueue.get(i).getLatchedStatus()){
-                    currentlyWorkingJob = mainToDrumQueue.get(i);
-                    lowest = currentlyWorkingJob.getCpuTimeLeft();
-                    lowestIndex = i;
-                }
-                
+            for(int i = 0; i < mainToDrumQueue.size(); i++){                
                 currentlyWorkingJob = mainToDrumQueue.get(i);
                 
-                if(currentlyWorkingJob != null && !mainToDrumQueue.get(i).getLatchedStatus()){               
-                    if(currentlyWorkingJob.getCpuTimeLeft() > lowest){
-                        lowestIndex = i;
-                        lowest = currentlyWorkingJob.getCpuTimeLeft();
-                    }
+                if(currentlyWorkingJob != null && !mainToDrumQueue.get(i).getLatchedStatus() && currentlyWorkingJob.getCpuTimeLeft() > lowest){               
+                    lowestIndex = i;
+                    lowest = currentlyWorkingJob.getCpuTimeLeft();
                 }
             }
             
             if(lowest > 0){
                 DoingSwap = true;
-                //FreeSpaceTable.addSpace(currentlyWorkingJob);
                 currentlyWorkingJob = mainToDrumQueue.get(lowestIndex);
                 sos.siodrum(currentlyWorkingJob.getJobNumber(), currentlyWorkingJob.getJobSize(), currentlyWorkingJob.getAddress(), 1);
                 lastJobToDrum = currentlyWorkingJob;
-                while(readyQueue.contains(lastJobToDrum))
-                    readyQueue.remove(lastJobToDrum);                    
-                while(ioQueue.contains(lastJobToDrum))
-                    ioQueue.remove(lastJobToDrum);
+                
+                readyQueue.remove(lastJobToDrum);                    
+                ioQueue.remove(lastJobToDrum);
                 mainToDrumQueue.remove(lastJobToDrum);                
             }                        
         }        
@@ -314,14 +235,14 @@ public class os{
         lastRunningJobPCB = currentlyWorkingJob;
         lastRunningJobPCB.setLastTimeProcessing(p[5]);
         
-        if(lastRunningJobPCB.getCpuTimeLeft() > roundRobinSlice){
-			a[0] = 2; // Set system to process a job
+        if(lastRunningJobPCB.getCpuTimeLeft() > ROUNDROBINSLICE){
+			a[0] = 2;
 			p[2] = lastRunningJobPCB.getAddress();
 			p[3] = lastRunningJobPCB.getJobSize();
-			p[4] = roundRobinSlice;
+			p[4] = ROUNDROBINSLICE;
 			
 		}else{
-			a[0] = 2; // Set system to process a job
+			a[0] = 2;
 			p[2] = lastRunningJobPCB.getAddress();
 			p[3] = lastRunningJobPCB.getJobSize();
 			p[4] = lastRunningJobPCB.getCpuTimeLeft();
@@ -329,8 +250,6 @@ public class os{
     }
     
     public static void cpuScheduler(int a[], int p[]){
-        boolean possible;
-        boolean falseStuff = true;
         int lowest = 0;
         int lowestIndex = 0;
         
@@ -343,15 +262,9 @@ public class os{
             
             currentlyWorkingJob = readyQueue.get(i);
             
-            if(currentlyWorkingJob != null){
-                if(currentlyWorkingJob.getBlockedStatus() == false ){                
-                    if(currentlyWorkingJob.getTerminatedStatus() == false){
-                        if(currentlyWorkingJob.getJobSize() < lowest){
-                            lowestIndex = i;
-                            lowest = currentlyWorkingJob.getJobSize();
-                        }
-                    }
-                }
+            if(currentlyWorkingJob != null && !currentlyWorkingJob.getBlockedStatus() && !currentlyWorkingJob.getTerminatedStatus() && currentlyWorkingJob.getJobSize() < lowest){              
+                lowestIndex = i;
+                lowest = currentlyWorkingJob.getJobSize();
             }
         }
         
@@ -360,14 +273,10 @@ public class os{
             dispatcher(a, p);
             while(readyQueue.contains(currentlyWorkingJob))
                 readyQueue.remove(currentlyWorkingJob);
-            falseStuff = true;
             return;                
         }
-        
-        if(falseStuff == true){
-            currentlyWorkingJob = null;
-            lastRunningJobPCB = null;
-            a[0] = 1;
-        }
+
+        lastRunningJobPCB = null;
+        a[0] = 1;
     }    
 }
